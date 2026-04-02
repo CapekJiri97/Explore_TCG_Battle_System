@@ -1,0 +1,1877 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fronta: Taktická Rychlost</title>
+    <style>
+        :root {
+            --ui-bg: #161616;
+            --ui-surface: #1f1f1f;
+            --ui-border: #454545;
+            --ui-text: #f1f1f1;
+            --ui-muted: #b8b8b8;
+            --cell-w: min(30vw, 112px);
+            --cell-h: min(38vw, 138px);
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: radial-gradient(circle at 50% -20%, #343434 0%, #1a1a1a 45%, #121212 100%);
+            color: var(--ui-text);
+            text-align: center;
+            margin: 0;
+            padding: 8px;
+        }
+
+        #game-container {
+            width: min(100%, 520px);
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+        }
+
+        #round-info {
+            width: 100%;
+            font-size: 12px;
+            color: #d8d8d8;
+            background: linear-gradient(180deg, #232323, #171717);
+            border: 1px solid var(--ui-border);
+            padding: 7px;
+            border-radius: 8px;
+            text-align: left;
+            box-sizing: border-box;
+        }
+
+        #clue-strip {
+            width: 100%;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            justify-content: center;
+            font-size: 11px;
+        }
+
+        .clue-pill {
+            background: #1b1b1b;
+            border: 1px solid #4e4e4e;
+            border-radius: 999px;
+            padding: 4px 8px;
+            color: #d4d4d4;
+            white-space: nowrap;
+        }
+
+        body.cinematic-mode .floating-text { animation-duration: 2.7s; }
+        body.cinematic-mode .anim-bump-up,
+        body.cinematic-mode .anim-bump-down,
+        body.cinematic-mode .anim-hit,
+        body.cinematic-mode .anim-duel-attacker,
+        body.cinematic-mode .anim-duel-defender,
+        body.cinematic-mode .anim-death,
+        body.cinematic-mode .attack-trail { animation-duration: 1.2s; }
+
+        #control-row {
+            width: 100%;
+            display: flex;
+            gap: 8px;
+            justify-content: center;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        /* Initiative Bar */
+        #initiative-bar { display: flex; gap: 5px; background: #111; padding: 8px; border-radius: 8px; width: 100%; overflow-x: auto; border: 1px solid #555; align-items: center; justify-content: flex-start; margin-bottom: 2px; box-sizing: border-box; }
+        .init-item { padding: 5px 10px; border-radius: 4px; font-size: 12px; font-weight: bold; white-space: nowrap; border: 1px solid #444; opacity: 0.6; }
+        .init-item.active { opacity: 1; border-color: #FFEB3B; box-shadow: 0 0 10px rgba(255,235,59,0.5); transform: scale(1.1); margin: 0 5px; }
+        .init-item.player { background: #1b3a1b; color: #81c784; }
+        .init-item.enemy { background: #3a1b1b; color: #e57373; }
+
+        /* Grid */
+        #board { display: grid; grid-template-columns: repeat(3, var(--cell-w)); grid-template-rows: repeat(4, var(--cell-h)); gap: 7px; background: #2b2b2b; padding: 8px; border-radius: 10px; width: 100%; justify-content: center; box-sizing: border-box; position: relative; }
+        .cell { background: #444; border: 2px dashed #555; border-radius: 8px; display: flex; justify-content: center; align-items: center; cursor: pointer; position: relative; flex-direction: column; color: #777; font-size: 12px;}
+        .cell:hover { background: #555; }
+        .cell.enemy-zone { border-color: #833; background: #2a1a1a; }
+        .cell.player-zone { border-color: #383; background: #1a2a1a; }
+        .cell.base-enemy { border-color: #ffcc80; box-shadow: inset 0 0 0 2px rgba(255, 167, 38, 0.5); }
+        .cell.base-player { border-color: #90caf9; box-shadow: inset 0 0 0 2px rgba(66, 165, 245, 0.5); }
+        .cell.active-unit-cell { box-shadow: 0 0 0 3px rgba(255, 235, 59, 0.9), inset 0 0 18px rgba(255, 235, 59, 0.25); }
+        .cell.move-option { box-shadow: 0 0 0 2px rgba(124, 255, 124, 0.7), inset 0 0 14px rgba(88, 236, 113, 0.25); }
+        .cell.move-option::after { content: '•'; position: absolute; top: 6px; left: 8px; color: #b9ffbe; font-size: 18px; animation: pulse-option 1s infinite; }
+        .cell.target-option { box-shadow: 0 0 0 2px rgba(255, 120, 120, 0.8), inset 0 0 14px rgba(255, 82, 82, 0.28); }
+        .cell.target-option::after { content: '✦'; position: absolute; top: 6px; right: 8px; color: #ffb5b5; font-size: 14px; animation: pulse-option 1s infinite; }
+        .base-label { position: absolute; bottom: 2px; left: 2px; right: 2px; font-size: 9px; background: rgba(0,0,0,0.6); border-radius: 4px; padding: 2px; color: #ddd; }
+        
+        /* Character Card */
+        .char-card { width: calc(100% - 4px); height: calc(100% - 4px); border-radius: 6px; padding: 4px; box-sizing: border-box; display: flex; flex-direction: column; justify-content: space-between; font-size: 10px; font-weight: bold; border: 2px solid #fff; position: absolute; top: 2px; left: 2px; color: white; transition: 0.2s; overflow: hidden; }
+        .char-card.player { border-color: #4CAF50; }
+        .char-card.enemy { border-color: #f44336; }
+        .char-card.active-turn { box-shadow: 0 0 18px #FFEB3B; border-color: #FFEB3B; z-index: 10; transform: translateY(-4px); animation: active-glow 1.8s ease-in-out infinite; }
+        .char-card.draggable { touch-action: none; cursor: grab; }
+        .char-card.dragging { opacity: 0.35; }
+        .card-top { display: flex; justify-content: space-between; align-items: center; gap: 4px; }
+        .card-head { min-height: 18px; }
+        .card-name { font-size: 9.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+        .card-meta { display: flex; justify-content: space-between; align-items: flex-start; gap: 4px; }
+        .card-meta-left { display: flex; gap: 4px; align-items: center; }
+        .card-art { align-self: center; width: 30px; aspect-ratio: 1 / 1; border-radius: 5px; border: 1px solid rgba(255,255,255,0.35); background: linear-gradient(160deg, rgba(255,255,255,0.14), rgba(0,0,0,0.42)); display: flex; justify-content: center; align-items: center; font-size: 15px; margin: 1px 0; }
+        .inspect-btn { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.4); background: rgba(0,0,0,0.35); color: #fff; font-size: 10px; cursor: pointer; }
+        .rarity-badge { font-size: 9px; padding: 1px 5px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.45); background: rgba(0,0,0,0.38); }
+        .rarity-common { color: #f0f0f0; }
+        .rarity-rare { color: #64b5f6; }
+        .rarity-epic { color: #ce93d8; }
+        .rarity-legendary { color: #ffca28; }
+        .stats { display: flex; justify-content: space-between; align-items: center; gap: 4px; background: rgba(0,0,0,0.8); padding: 2px; border-radius: 4px; font-size: 11px; }
+        .sub-stats { font-size: 9px; background: rgba(0,0,0,0.65); border-radius: 4px; padding: 2px; line-height: 1.2; }
+        .spd-badge { min-width: 26px; height: 16px; background: #FFC107; color: #000; border-radius: 999px; border: 1px solid #222; display: inline-flex; justify-content: center; align-items: center; font-size: 10px; padding: 0 4px; }
+        .move-badge { min-width: 34px; height: 16px; background: #2f3640; color: #d9f7ff; border-radius: 999px; border: 1px solid #89c6ff; display: inline-flex; justify-content: center; align-items: center; font-size: 8px; padding: 0 5px; }
+        .move-badge.low { color: #ffe08a; border-color: #ffd166; }
+        .move-badge.empty { color: #ff9e9e; border-color: #ff7b7b; }
+        
+        /* Elements & Hand */
+        .el-fire { background: linear-gradient(135deg, #b71c1c, #f57c00); }
+        .el-water { background: linear-gradient(135deg, #0d47a1, #29b6f6); }
+        .el-forest { background: linear-gradient(135deg, #1b5e20, #7cb342); }
+        .el-wind { background: linear-gradient(135deg, #6a1b9a, #ab47bc); }
+        .el-mountain { background: linear-gradient(135deg, #4e342e, #8d6e63); }
+        .el-electric { background: linear-gradient(135deg, #f9a825, #ffee58); color: #fff; }
+        .el-ice { background: linear-gradient(135deg, #0277bd, #b3e5fc); color: #fff; }
+        .el-bug { background: linear-gradient(135deg, #33691e, #9ccc65); color: #fff; }
+
+        #hand { display: flex; gap: 6px; min-height: 90px; width: 100%; justify-content: flex-start; margin-top: 2px; overflow-x: auto; padding: 2px; box-sizing: border-box; }
+        .ammo-card { width: 64px; min-width: 64px; height: 90px; border-radius: 6px; display: flex; flex-direction: column; justify-content: center; align-items: center; font-size: 20px; cursor: pointer; border: 2px solid white; transition: 0.25s; position: relative; }
+        .ammo-card:hover { transform: translateY(-10px); }
+        .ammo-card.selected { border-color: #ffee58; box-shadow: 0 0 12px rgba(255, 238, 88, 0.7); }
+        .ammo-desc { font-size: 9px; background: rgba(0,0,0,0.6); padding: 2px; border-radius: 3px; margin-top: 5px; text-align: center; line-height: 1.2; }
+        .ammo-elements { position: absolute; bottom: 3px; font-size: 10px; background: rgba(0,0,0,0.45); border-radius: 4px; padding: 1px 4px; }
+        .group-aqua { background: linear-gradient(135deg, #1565c0, #4fc3f7); }
+        .group-wild { background: linear-gradient(135deg, #33691e, #9ccc65); }
+        .group-blaze { background: linear-gradient(135deg, #bf360c, #ffb300); }
+        .group-stone { background: linear-gradient(135deg, #4e342e, #9575cd); }
+        
+        /* Logs & Modals */
+        #log { width: 100%; height: 126px; background: #111; border: 1px solid #555; overflow-y: auto; padding: 8px; font-size: 12px; text-align: left; border-radius: 6px; box-sizing: border-box; }
+        .log-entry { margin-bottom: 5px; padding-bottom: 5px; border-bottom: 1px solid #333; }
+        .btn { padding: 10px 20px; background: #4CAF50; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold;}
+        .btn.btn-mini { padding: 6px 10px; font-size: 11px; }
+        .btn:hover { background: #45a049; }
+
+        #combat-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #222; padding: 12px; border: 3px solid #f44336; border-radius: 10px; z-index: 100; flex-direction: column; gap: 10px; box-shadow: 0 0 30px rgba(0,0,0,0.9); width: min(96vw, 440px); max-height: 90vh; overflow-y: auto; }
+        #combat-modal.active { display: flex; }
+        #combat-modal.minimized { top: auto; left: auto; right: 12px; bottom: 12px; transform: none; width: min(90vw, 290px); border-color: #ffca28; z-index: 140; }
+        #combat-header { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+        #combat-actions { display: flex; gap: 6px; }
+        #combat-body { display: flex; flex-direction: column; gap: 8px; }
+        #combat-modal.minimized #combat-body { display: none; }
+        #combat-compact { display: none; background: #111; border-radius: 6px; border: 1px solid #555; padding: 8px; text-align: left; font-size: 12px; }
+        #combat-modal.minimized #combat-compact { display: block; }
+        #combat-state { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .combat-unit { border: 1px solid #555; border-radius: 8px; padding: 7px; text-align: left; background: #171717; font-size: 12px; }
+        .combat-unit.enemy { border-color: #d66; }
+        .combat-unit.player { border-color: #7fc97f; }
+        .combat-hp { font-weight: bold; }
+        .combat-preview { font-size: 11px; color: #cfcfcf; }
+        #setup-modal { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #202020; border: 2px solid #90caf9; border-radius: 12px; width: 95%; max-width: 640px; max-height: 90vh; overflow-y: auto; padding: 16px; z-index: 120; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+        #setup-modal.active { display: block; }
+        #setup-cards { display: grid; grid-template-columns: 1fr; gap: 10px; }
+        .setup-card { border: 2px solid #666; border-radius: 8px; padding: 8px; text-align: left; cursor: pointer; transition: 0.2s; }
+        .setup-card:hover { transform: translateY(-3px); }
+        .setup-card.selected { border-color: #ffee58; box-shadow: 0 0 10px rgba(255, 238, 88, 0.6); }
+        .setup-line { display: flex; justify-content: space-between; font-size: 12px; margin-top: 4px; }
+        
+        /* Animations */
+        @keyframes floatUp { 0% { opacity: 1; transform: translateY(0); } 100% { opacity: 0; transform: translateY(-36px); } }
+        .floating-text { position: absolute; z-index: 50; font-weight: bold; font-size: 20px; animation: floatUp 1.9s forwards; text-shadow: 2px 2px 4px black; pointer-events: none;}
+        .text-red { color: #ff5252; }
+        .text-green { color: #8cff9a; }
+        .text-cyan { color: #7be7ff; }
+        
+        @keyframes bump-up { 0%, 100% {transform: translateY(0);} 50% {transform: translateY(-16px) scale(1.09);} }
+        @keyframes bump-down { 0%, 100% {transform: translateY(0);} 50% {transform: translateY(16px) scale(1.09);} }
+        @keyframes active-glow { 0%, 100% { box-shadow: 0 0 14px rgba(255, 235, 59, 0.55); } 50% { box-shadow: 0 0 24px rgba(255, 235, 59, 0.95); } }
+        @keyframes pulse-option { 0%, 100% { opacity: 0.55; transform: scale(0.9); } 50% { opacity: 1; transform: scale(1.12); } }
+        @keyframes hit-flash { 0% { filter: brightness(1); } 35% { filter: brightness(2.1) saturate(1.7); } 100% { filter: brightness(1); } }
+        @keyframes move-flash { 0% { box-shadow: 0 0 0 0 rgba(120, 255, 167, 0.9); } 100% { box-shadow: 0 0 0 18px rgba(120, 255, 167, 0); } }
+        @keyframes trail-shot {
+            0% { opacity: 0; transform: translateY(-50%) rotate(var(--angle)) scaleX(0.06); }
+            18% { opacity: 0.95; }
+            100% { opacity: 0; transform: translateY(-50%) rotate(var(--angle)) scaleX(1); }
+        }
+        @keyframes duel-attacker {
+            0%, 100% { transform: translateY(0) scale(1); }
+            50% { transform: translateY(-10px) scale(1.09); filter: saturate(1.3) brightness(1.2); }
+        }
+        @keyframes duel-defender {
+            0%, 100% { transform: translateY(0) scale(1); }
+            40% { transform: translateY(6px) scale(0.97); filter: brightness(1.3); }
+        }
+        @keyframes death-fade {
+            0% { opacity: 1; transform: scale(1); }
+            55% { opacity: 1; transform: scale(1.08) rotate(1deg); filter: saturate(0.8); }
+            100% { opacity: 0; transform: scale(0.72) rotate(-6deg); filter: grayscale(1) brightness(0.45); }
+        }
+        .anim-bump-up { animation: bump-up 0.65s ease-in-out; z-index: 20; }
+        .anim-bump-down { animation: bump-down 0.65s ease-in-out; z-index: 20; }
+        .anim-hit { animation: hit-flash 0.75s ease-out; }
+        .anim-move { animation: move-flash 0.9s ease-out; }
+        .anim-duel-attacker { animation: duel-attacker 0.82s ease-in-out; }
+        .anim-duel-defender { animation: duel-defender 0.82s ease-in-out; }
+        .anim-death { animation: death-fade 0.92s ease forwards; }
+
+        .attack-trail {
+            position: fixed;
+            height: 4px;
+            border-radius: 999px;
+            pointer-events: none;
+            z-index: 260;
+            transform-origin: left center;
+            transform: translateY(-50%) rotate(var(--angle)) scaleX(0.06);
+            animation: trail-shot 0.82s ease-out forwards;
+            box-shadow: 0 0 12px rgba(255, 232, 133, 0.7);
+        }
+
+        #drag-ghost {
+            position: fixed;
+            pointer-events: none;
+            z-index: 250;
+            border-radius: 8px;
+            border: 2px solid #ffee58;
+            background: rgba(20, 20, 20, 0.88);
+            padding: 8px;
+            font-size: 12px;
+            box-shadow: 0 0 16px rgba(255, 235, 59, 0.35);
+            transform: translate(-50%, -50%);
+        }
+
+        .cell.drop-hover {
+            box-shadow: 0 0 0 3px rgba(255, 235, 59, 0.9), inset 0 0 18px rgba(255, 235, 59, 0.4);
+        }
+
+        #card-inspect-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.78);
+            z-index: 180;
+            padding: 14px;
+            box-sizing: border-box;
+            overflow-y: auto;
+        }
+
+        #card-inspect-modal.active { display: block; }
+
+        #card-inspect-content {
+            width: min(96vw, 420px);
+            margin: 18px auto;
+            background: linear-gradient(180deg, #242424, #171717);
+            border: 2px solid #777;
+            border-radius: 12px;
+            padding: 12px;
+            box-sizing: border-box;
+            text-align: left;
+        }
+
+        .inspect-header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .inspect-art {
+            width: min(52vw, 200px);
+            aspect-ratio: 1 / 1;
+            border-radius: 8px;
+            border: 2px solid rgba(255,255,255,0.45);
+            background: linear-gradient(160deg, rgba(255,255,255,0.14), rgba(0,0,0,0.42));
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 54px;
+            margin: 10px auto;
+        }
+        .inspect-section { background: #151515; border: 1px solid #494949; border-radius: 8px; padding: 8px; margin-top: 8px; font-size: 12px; }
+
+        @media (min-width: 700px) {
+            :root {
+                --cell-w: 114px;
+                --cell-h: 136px;
+            }
+
+            #setup-cards {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+
+<div id="game-container">
+    <div id="round-info"></div>
+    <div id="clue-strip">
+        <div class="clue-pill">📌 Přetáhni aktivní kartu na zelené pole</div>
+        <div class="clue-pill">⚔️ Přetáhni na červený cíl pro útok</div>
+        <div class="clue-pill">ℹ️ Klepni na i pro detail karty</div>
+        <div class="clue-pill">🛡️ Útočník má protiútok -1 DMG</div>
+        <div class="clue-pill">🎴 Taktiky: silná 2, neutrální 1, nevýhoda 0</div>
+    </div>
+    <div id="control-row">
+        <button id="end-turn-btn" class="btn btn-mini" onclick="endPlayerTurn()" style="background: #546e7a;">Ukončit tah</button>
+        <button id="cinematic-btn" class="btn btn-mini" onclick="toggleCinematicMode()" style="background: #6d4c41;">Cinematic: vypnuto</button>
+    </div>
+    <div id="initiative-bar"></div>
+    <div id="board"></div>
+    <div id="hand"></div>
+    <div id="log"></div>
+    <button id="restart-btn" class="btn" onclick="restartGame()" style="display: none; margin-top: 8px;">Hrát znovu</button>
+</div>
+
+<div id="combat-modal">
+    <div id="combat-header">
+        <h3 style="margin: 0; color: #f44336;">⚔️ Křížový střet</h3>
+        <div id="combat-actions">
+            <button id="combat-toggle-btn" class="btn btn-mini" onclick="toggleCombatModalMinimize()" style="background: #607d8b;">Minimalizovat</button>
+        </div>
+    </div>
+    <div id="combat-body">
+        <div id="combat-state"></div>
+        <p id="combat-math" style="font-size: 13px; background: #111; padding: 8px; border-radius: 5px; margin: 0; text-align: left;"></p>
+        <p class="combat-preview" style="margin: 0;">Vyber kartu taktiky pro útok/protiútok. Najetím myší nebo dotykem uvidíš odhad poškození.</p>
+        <div id="combat-hand" style="display: flex; gap: 8px; justify-content: center; flex-wrap: wrap;"></div>
+        <button class="btn" onclick="resolveCombat(null)" style="background: #777;">Bojovat bez karty</button>
+    </div>
+    <div id="combat-compact"></div>
+</div>
+
+<div id="setup-modal">
+    <h3 style="margin-top: 0;">Vyber 4 jednotky z 6 karet</h3>
+    <p style="font-size: 12px; color: #bbb;">Tvůj balíček má 12 karet. Nejprve lízneš 6 a nasadíš 4 na bojiště.</p>
+    <div id="setup-cards"></div>
+    <button id="setup-confirm" class="btn" onclick="confirmSetupSelection()" style="margin-top: 12px;">Nasadit 4/4</button>
+</div>
+
+<div id="card-inspect-modal">
+    <div id="card-inspect-content"></div>
+</div>
+
+<script>
+    const ROWS = 4;
+    const COLS = 3;
+    const PLAYER_BASE_TARGET = { r: 3, c: 1 };
+    const ENEMY_BASE_TARGET = { r: 0, c: 1 };
+    const PLAYER_SPAWNS = [ { r: 3, c: 0 }, { r: 3, c: 1 }, { r: 3, c: 2 }, { r: 2, c: 0 }, { r: 2, c: 2 } ];
+    const ENEMY_SPAWNS = [ { r: 0, c: 0 }, { r: 0, c: 1 }, { r: 0, c: 2 }, { r: 1, c: 0 }, { r: 1, c: 2 } ];
+
+    const ELEMENTS = [
+        { id: 'water', name: 'Voda', icon: '💧', className: 'el-water', group: 'aqua', atk: 4, hp: 6, spd: 5 },
+        { id: 'fire', name: 'Oheň', icon: '🔥', className: 'el-fire', group: 'blaze', atk: 6, hp: 4, spd: 6 },
+        { id: 'forest', name: 'Les', icon: '🌿', className: 'el-forest', group: 'wild', atk: 2, hp: 7, spd: 4 },
+        { id: 'wind', name: 'Vítr', icon: '💨', className: 'el-wind', group: 'stone', atk: 7, hp: 3, spd: 6 },
+        { id: 'mountain', name: 'Hora', icon: '⛰️', className: 'el-mountain', group: 'stone', atk: 3, hp: 9, spd: 2 },
+        { id: 'electric', name: 'Elektřina', icon: '⚡', className: 'el-electric', group: 'blaze', atk: 8, hp: 1, spd: 8 },
+        { id: 'ice', name: 'Led', icon: '❄️', className: 'el-ice', group: 'aqua', atk: 5, hp: 5, spd: 6 },
+        { id: 'bug', name: 'Brouk', icon: '🪲', className: 'el-bug', group: 'wild', atk: 4, hp: 4, spd: 10 }
+    ];
+    const ELEMENT_BY_ID = Object.fromEntries(ELEMENTS.map(e => [e.id, e]));
+
+    const TACTIC_GROUPS = [
+        { id: 'aqua', icon: '💧', className: 'group-aqua', label: 'Aqua', elements: ['water', 'ice'] },
+        { id: 'wild', icon: '🌿', className: 'group-wild', label: 'Divočina', elements: ['forest', 'bug'] },
+        { id: 'blaze', icon: '⚡', className: 'group-blaze', label: 'Žár', elements: ['fire', 'electric'] },
+        { id: 'stone', icon: '⛰️', className: 'group-stone', label: 'Skála', elements: ['mountain', 'wind'] }
+    ];
+    const TACTIC_GROUP_BY_ID = Object.fromEntries(TACTIC_GROUPS.map(g => [g.id, g]));
+    const TACTIC_FORMS = [
+        { id: 'attack', label: 'Útok', icon: '⚔️' },
+        { id: 'defense', label: 'Štít', icon: '🛡️' }
+    ];
+    const TACTIC_FORM_BY_ID = Object.fromEntries(TACTIC_FORMS.map(f => [f.id, f]));
+    const TACTIC_MATCH_VALUE = 2;
+    const TACTIC_NEUTRAL_VALUE = 1;
+    const TACTIC_BLOCKED_BY_GROUP = {
+        aqua: 'blaze',
+        blaze: 'aqua',
+        wild: 'stone',
+        stone: 'wild'
+    };
+
+    const RARITIES = [
+        { id: 'common', label: 'Běžná', symbol: '◆', weight: 56, atkMult: 1.0, hpBias: 0 },
+        { id: 'rare', label: 'Vzácná', symbol: '✦', weight: 28, atkMult: 1.12, hpBias: 0.08 },
+        { id: 'epic', label: 'Epická', symbol: '✶', weight: 12, atkMult: 1.22, hpBias: 0.12 },
+        { id: 'legendary', label: 'Legendární', symbol: '✹', weight: 4, atkMult: 1.34, hpBias: 0.2 }
+    ];
+    const RARITY_BY_ID = Object.fromEntries(RARITIES.map(r => [r.id, r]));
+
+    const CARD_NAME_POOL = {
+        water: ['Přílivový strážce', 'Mlžný kněz', 'Hlubinný jezdec', 'Pěnový prorok'],
+        fire: ['Popelový duelant', 'Jiskrný lovec', 'Lávový šermíř', 'Plamenná vědma'],
+        forest: ['Kořenová druidka', 'Mechový ochránce', 'Jelení hlídka', 'Korunní dryáda'],
+        wind: ['Větrný šíp', 'Bouřný průzkumník', 'Nebeská stopařka', 'Poryvný tanečník'],
+        mountain: ['Štítový val', 'Kamenný sentinel', 'Horský titán', 'Srázný obránce'],
+        electric: ['Bleskový skokan', 'Voltový lovec', 'Rázový technik', 'Tesla jezdec'],
+        ice: ['Ledová vědma', 'Mrazivý stín', 'Polární hlídka', 'Krystalový mág'],
+        bug: ['Rojový velitel', 'Jedovatý běžec', 'Chitinový šampión', 'Noční kukla']
+    };
+
+    const RARITY_PREFIX = {
+        common: ['Novic', 'Poutník', 'Hlídka'],
+        rare: ['Veterán', 'Mistr', 'Rytíř'],
+        epic: ['Arkanista', 'Šampion', 'Prorok'],
+        legendary: ['Legenda', 'Mýtus', 'Pradávný']
+    };
+
+    const ADVANTAGE_MAP = {
+        water: 'fire',
+        fire: 'forest',
+        forest: 'water',
+        mountain: 'electric',
+        electric: 'wind',
+        wind: 'mountain',
+        bug: 'ice'
+    };
+
+    const ATTACKER_GUARD_BONUS = 1;
+
+    const PASSIVE_DEFS = {
+        none: { label: 'Bez pasivky', short: 'Pasivka: -', desc: 'Tato karta nemá žádnou pasivní schopnost.' },
+        regen: { label: 'Regenerace', short: 'Pasivka: +1 HP/kolo', desc: 'Na začátku kola se jednotce obnoví 1 HP (max do hodnoty max HP).' },
+        bleedSelf: { label: 'Nestabilní', short: 'Pasivka: -1 HP/kolo', desc: 'Na začátku kola jednotka ztrácí 1 HP. Výměnou mívá vyšší tempo.' },
+        rooted: { label: 'Zakořeněný', short: 'Pasivka: bez pohybu, brnění +1', desc: 'Jednotka se nemůže hýbat, ale utrpí o 1 poškození méně z každého útoku.' },
+        extraMove: { label: 'Dvojkrok', short: 'Pasivka: 2x pohyb/tah', desc: 'Jednotka má v každém tahu dva kroky pohybu místo jednoho.' },
+        longReach: { label: 'Dlouhý dosah', short: 'Pasivka: dostřel 2', desc: 'Jednotka může útočit na vzdálenost až 2 pole (manhattan).' }
+    };
+
+    const PASSIVE_POOL_BY_ELEMENT = {
+        water: ['regen', 'longReach'],
+        fire: ['longReach', 'bleedSelf'],
+        forest: ['regen', 'rooted'],
+        wind: ['extraMove', 'longReach'],
+        mountain: ['rooted', 'regen'],
+        electric: ['extraMove', 'bleedSelf'],
+        ice: ['regen', 'rooted'],
+        bug: ['extraMove', 'bleedSelf']
+    };
+
+    const MOVEMENT_DEFS = {
+        orth: { label: 'Orto 1', icon: '↕↔', desc: 'Pohyb o 1 pole nahoru, dolů, doleva nebo doprava.' },
+        diag: { label: 'Diagonála 1', icon: '⤡', desc: 'Pohyb o 1 pole diagonálně.' },
+        omni: { label: 'Všesměr 1', icon: '✶', desc: 'Pohyb o 1 pole do všech 8 směrů.' },
+        dash: { label: 'Výpad 2', icon: '⇶', desc: 'Pohyb až o 2 pole přímo bez přeskočení obsazených polí.' },
+        phantom: { label: 'Skokan', icon: '♞', desc: 'Pohybuje se jako skokan, může přeskočit překážky.' }
+    };
+
+    let board = createEmptyBoard();
+    let playerDeck = [];
+    let enemyDeck = [];
+    let playerOpeningChoices = [];
+    let enemyOpeningChoices = [];
+    let selectedOpeningIndexes = new Set();
+    let setupPlacementCards = [];
+    let selectedPlacementCardIndex = null;
+    let isPlacementPhase = false;
+
+    let playerTacticHand = [];
+    let enemyTacticHand = [];
+    let currentRound = 0;
+    let baseHold = { playerOnEnemy: 0, enemyOnPlayer: 0 };
+
+    let turnQueue = [];
+    let activeUnitData = null;
+    let turnAction = null;
+    let combatState = null;
+    let isCombatModalMinimized = false;
+    let dragState = null;
+    let suppressClickUntil = 0;
+    let cinematicMode = false;
+
+    let gameOver = false;
+    let inSetupPhase = true;
+
+    function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+    function clamp(val, min, max) { return Math.max(min, Math.min(max, val)); }
+    function uid() { return Math.random().toString(36).slice(2, 11); }
+
+    function shuffle(arr) {
+        for (let i = arr.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [arr[i], arr[j]] = [arr[j], arr[i]];
+        }
+        return arr;
+    }
+
+    function randomFrom(arr) {
+        return arr[Math.floor(Math.random() * arr.length)];
+    }
+
+    function pickRarity() {
+        const total = RARITIES.reduce((sum, r) => sum + r.weight, 0);
+        let roll = Math.random() * total;
+        for (const rarity of RARITIES) {
+            roll -= rarity.weight;
+            if (roll <= 0) return rarity;
+        }
+        return RARITIES[0];
+    }
+
+    function createCardName(elementId, rarityId) {
+        const prefix = randomFrom(RARITY_PREFIX[rarityId] || ['Strážce']);
+        const core = randomFrom(CARD_NAME_POOL[elementId] || ['Neznámý']);
+        return `${prefix} ${core}`;
+    }
+
+    function createEmptyBoard() {
+        return Array.from({ length: ROWS }, () => Array(COLS).fill(null));
+    }
+
+    function isInside(r, c) {
+        return r >= 0 && r < ROWS && c >= 0 && c < COLS;
+    }
+
+    function toKey(r, c) {
+        return `${r}-${c}`;
+    }
+
+    function log(msg) {
+        const logEl = document.getElementById('log');
+        logEl.innerHTML += `<div class="log-entry">${msg}</div>`;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function pace(ms) {
+        return Math.round(ms * (cinematicMode ? 1.45 : 1));
+    }
+
+    function setCinematicMode(enabled) {
+        cinematicMode = enabled;
+        document.body.classList.toggle('cinematic-mode', enabled);
+        const btn = document.getElementById('cinematic-btn');
+        if (btn) btn.innerText = enabled ? 'Cinematic: zapnuto' : 'Cinematic: vypnuto';
+    }
+
+    function toggleCinematicMode() {
+        setCinematicMode(!cinematicMode);
+        log(cinematicMode ? '🎬 Cinematic režim zapnut: zpomalené tempo a delší animace.' : '⚡ Cinematic režim vypnut: rychlejší tempo hry.');
+    }
+
+    function animateCellEffect(r, c, className, duration = 350) {
+        const cell = document.getElementById(`cell-${r}-${c}`);
+        if (!cell) return;
+        cell.classList.add(className);
+        setTimeout(() => cell.classList.remove(className), pace(duration));
+    }
+
+    function getCellCenter(r, c) {
+        const cell = document.getElementById(`cell-${r}-${c}`);
+        if (!cell) return null;
+        const rect = cell.getBoundingClientRect();
+        return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+    }
+
+    function createAttackTrail(fromR, fromC, toR, toC, color, delayMs = 0) {
+        setTimeout(() => {
+            const start = getCellCenter(fromR, fromC);
+            const end = getCellCenter(toR, toC);
+            if (!start || !end) return;
+
+            const dx = end.x - start.x;
+            const dy = end.y - start.y;
+            const length = Math.sqrt(dx * dx + dy * dy);
+            const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+
+            const trail = document.createElement('div');
+            trail.className = 'attack-trail';
+            trail.style.left = `${start.x}px`;
+            trail.style.top = `${start.y}px`;
+            trail.style.width = `${length}px`;
+            trail.style.background = `linear-gradient(90deg, ${color}, rgba(255,255,255,0.1))`;
+            trail.style.setProperty('--angle', `${angleDeg}deg`);
+            document.body.appendChild(trail);
+
+            setTimeout(() => {
+                if (trail.parentNode) trail.parentNode.removeChild(trail);
+            }, pace(860));
+        }, pace(delayMs));
+    }
+
+    function markDuelCards(attR, attC, defR, defC) {
+        const attCard = document.getElementById(`cell-${attR}-${attC}`)?.querySelector('.char-card');
+        const defCard = document.getElementById(`cell-${defR}-${defC}`)?.querySelector('.char-card');
+        if (attCard) {
+            attCard.classList.add('anim-duel-attacker');
+            setTimeout(() => attCard.classList.remove('anim-duel-attacker'), pace(860));
+        }
+        if (defCard) {
+            defCard.classList.add('anim-duel-defender');
+            setTimeout(() => defCard.classList.remove('anim-duel-defender'), pace(860));
+        }
+    }
+
+    function updateHpDisplayInCell(r, c, hp, maxHp) {
+        const hpEl = document.getElementById(`cell-${r}-${c}`)?.querySelector('.stats span:last-child');
+        if (!hpEl) return;
+        const safeHp = Math.max(0, hp);
+        hpEl.innerText = `❤️${safeHp}`;
+        hpEl.style.color = safeHp <= 2 ? '#ff5252' : (safeHp <= Math.floor(maxHp * 0.5) ? '#ffd180' : 'white');
+    }
+
+    function setCombatModalMinimized(minimized) {
+        isCombatModalMinimized = minimized;
+        const modal = document.getElementById('combat-modal');
+        modal.classList.toggle('minimized', minimized);
+        document.getElementById('combat-toggle-btn').innerText = minimized ? 'Obnovit' : 'Minimalizovat';
+        renderCombatPanel(null);
+    }
+
+    function toggleCombatModalMinimize() {
+        if (!combatState) return;
+        setCombatModalMinimized(!isCombatModalMinimized);
+    }
+
+    function renderCombatUnitCard(unit, sideLabel, projectedDamage, willMoveBonus) {
+        const hpAfter = Math.max(0, unit.hp - projectedDamage);
+        const passive = PASSIVE_DEFS[unit.passiveId]?.label || 'Bez pasivky';
+        const move = MOVEMENT_DEFS[unit.movementId]?.label || unit.movementId;
+        const sideClass = unit.isPlayer ? 'player' : 'enemy';
+        const bonusText = willMoveBonus ? ' (+1 za pohyb Elektřiny)' : '';
+        const rarityClass = `rarity-${unit.rarity.id}`;
+
+        return `
+            <div class="combat-unit ${sideClass}">
+                <div style="display:flex;justify-content:space-between;gap:6px;align-items:center;">
+                    <b>${sideLabel}: ${unit.element.icon} ${unit.name}</b>
+                    <span class="rarity-badge ${rarityClass}">${unit.rarity.symbol}</span>
+                </div>
+                <div>ATK ${unit.atk} | SPD ${unit.spd}</div>
+                <div>Pohyb: ${move}</div>
+                <div>Pasivka: ${passive}</div>
+                <div class="combat-hp">HP: ${unit.hp} → ${hpAfter}</div>
+                <div class="combat-preview">Přijaté DMG: ${projectedDamage}${bonusText}</div>
+            </div>
+        `;
+    }
+
+    function renderCombatPanel(previewCardIndex = null) {
+        const stateEl = document.getElementById('combat-state');
+        const mathEl = document.getElementById('combat-math');
+        const compactEl = document.getElementById('combat-compact');
+        if (!stateEl || !mathEl || !compactEl) return;
+
+        if (!combatState) {
+            stateEl.innerHTML = '';
+            mathEl.innerHTML = '';
+            compactEl.innerHTML = '';
+            return;
+        }
+
+        const { attacker, defender, isPlayerAttacking } = combatState;
+        const myUnit = isPlayerAttacking ? attacker : defender;
+        const enemyUnit = isPlayerAttacking ? defender : attacker;
+
+        const previewCard = previewCardIndex !== null ? playerTacticHand[previewCardIndex] : null;
+
+        const attackerPreviewCard = isPlayerAttacking ? previewCard : null;
+        const defenderPreviewCard = isPlayerAttacking ? null : previewCard;
+        const attackerPreviewEffect = resolveTacticEffect(attackerPreviewCard, attacker);
+        const defenderPreviewEffect = resolveTacticEffect(defenderPreviewCard, defender);
+
+        const attackerMoved = !!(turnAction && turnAction.movedThisTurn && activeUnitData && activeUnitData.unit && activeUnitData.unit.id === attacker.id);
+        const attPreviewRaw = computeDamage(attacker, defender, attackerPreviewEffect.attackBonus, attackerMoved);
+        const attPreviewDmg = Math.max(0, attPreviewRaw - defenderPreviewEffect.defenseShield);
+        const defPreviewRaw = computeDamage(defender, attacker, defenderPreviewEffect.attackBonus, false);
+        const defPreviewDmg = Math.max(0, defPreviewRaw - ATTACKER_GUARD_BONUS - attackerPreviewEffect.defenseShield);
+
+        const role = isPlayerAttacking ? 'Útočíš' : 'Bráníš se';
+        const elementAdv = elementalBonus(myUnit.element.id, enemyUnit.element.id);
+        let cardText = 'bez vybrané karty';
+        if (previewCard) {
+            const previewEffect = resolveTacticEffect(previewCard, myUnit);
+            const affinityText = previewEffect.affinity === 'strong'
+                ? 'silná synergie'
+                : (previewEffect.affinity === 'neutral' ? 'neutrální synergie' : 'nevýhoda');
+            const effectText = previewCard.formId === 'defense'
+                ? `štít ${previewEffect.defenseShield}`
+                : `+${previewEffect.attackBonus} ATK`;
+            cardText = `${previewCard.formIcon} ${previewCard.formLabel} | ${previewCard.icon} ${previewCard.label} ${previewCard.elementIcons} (${effectText})`;
+            cardText += ` <span style="opacity:0.8;">${affinityText}</span>`;
+        }
+
+        stateEl.innerHTML =
+            renderCombatUnitCard(attacker, 'Útočník', defPreviewDmg, attackerMoved && attacker.element.id === 'electric') +
+            renderCombatUnitCard(defender, 'Obránce', attPreviewDmg, false);
+
+        mathEl.innerHTML = `
+            <b>${role} proti ${enemyUnit.name}.</b><br>
+            Vybraný bonus: <b>${cardText}</b><br>
+            Odhad poškození teď: <b>${attPreviewDmg}</b> do obránce a <b>${defPreviewDmg}</b> protiútok.<br>
+            Elementální výhoda pro tebe: <b>+${elementAdv}</b>.<br>
+            Bonus útočníka: <b>−${ATTACKER_GUARD_BONUS} DMG</b> z protiútoku.<br>
+            Pravidlo skupin: <b>silná 2 / neutrální 1 / nevýhoda 0</b>.
+        `;
+
+        compactEl.innerHTML = `
+            <b>Křížový střet běží</b><br>
+            ${attacker.name} (${attacker.hp} HP) vs ${defender.name} (${defender.hp} HP)<br>
+            Klikni na <b>Obnovit</b> pro výběr taktiky.
+        `;
+    }
+
+    function endPlayerTurn() {
+        if (gameOver || inSetupPhase || combatState) return;
+        if (!activeUnitData || !activeUnitData.unit.isPlayer) return;
+        log(`⏭️ ${activeUnitData.unit.name} ukončil tah ručně.`);
+        setTimeout(startNextTurn, pace(420));
+    }
+
+    function openCardInspect(r, c) {
+        const unit = board[r][c];
+        if (!unit) return;
+
+        const movement = MOVEMENT_DEFS[unit.movementId] || { label: unit.movementId, desc: '' };
+        const passive = PASSIVE_DEFS[unit.passiveId] || { label: unit.passiveId, desc: '' };
+        const rarityClass = `rarity-${unit.rarity.id}`;
+        const group = TACTIC_GROUP_BY_ID[unit.element.group];
+        const tacticPair = group ? group.elements.map(elId => `${ELEMENT_BY_ID[elId].icon} ${ELEMENT_BY_ID[elId].name}`).join(' + ') : '-';
+
+        const content = document.getElementById('card-inspect-content');
+        content.innerHTML = `
+            <div class="inspect-header">
+                <div>
+                    <div class="rarity-badge ${rarityClass}">${unit.rarity.symbol} ${unit.rarity.label}</div>
+                    <h3 style="margin: 6px 0 2px 0;">${unit.element.icon} ${unit.name}</h3>
+                    <div style="font-size: 12px; color: #c8c8c8;">${unit.isPlayer ? 'Tvoje jednotka' : 'Nepřátelská jednotka'}</div>
+                </div>
+                <button class="btn btn-mini" onclick="closeCardInspect()" style="background: #616161;">Zavřít</button>
+            </div>
+            <div class="inspect-art ${unit.element.className}">${unit.element.icon}</div>
+            <div class="inspect-section">
+                <b>Statistiky</b><br>
+                ATK ${unit.atk} | HP ${unit.hp}/${unit.maxHp} | SPD ${unit.spd}
+            </div>
+            <div class="inspect-section">
+                <b>Pohyb:</b> ${movement.icon} ${movement.label}<br>
+                ${movement.desc}
+            </div>
+            <div class="inspect-section">
+                <b>Pasivní schopnost:</b> ${passive.label}<br>
+                ${passive.desc}
+            </div>
+            <div class="inspect-section">
+                <b>Taktická skupina:</b> ${group ? `${group.icon} ${group.label}` : '-'}<br>
+                Párové elementy: ${tacticPair}
+            </div>
+        `;
+
+        document.getElementById('card-inspect-modal').classList.add('active');
+    }
+
+    function closeCardInspect() {
+        document.getElementById('card-inspect-modal').classList.remove('active');
+    }
+
+    function selectPlacementCard(index) {
+        if (!inSetupPhase || !isPlacementPhase) return;
+        if (index < 0 || index >= setupPlacementCards.length) return;
+        selectedPlacementCardIndex = index;
+        render();
+    }
+
+    function parseCellId(cellId) {
+        if (!cellId || !cellId.startsWith('cell-')) return null;
+        const parts = cellId.split('-');
+        if (parts.length !== 3) return null;
+        const r = Number(parts[1]);
+        const c = Number(parts[2]);
+        if (!Number.isInteger(r) || !Number.isInteger(c)) return null;
+        return { r, c };
+    }
+
+    function cellFromPoint(clientX, clientY) {
+        const el = document.elementFromPoint(clientX, clientY);
+        if (!el) return null;
+        const cell = el.closest('.cell');
+        if (!cell) return null;
+        const rc = parseCellId(cell.id);
+        if (!rc) return null;
+        return { ...rc, cell };
+    }
+
+    function clearDragHover() {
+        if (dragState && dragState.hoverCellEl) {
+            dragState.hoverCellEl.classList.remove('drop-hover');
+            dragState.hoverCellEl = null;
+        }
+    }
+
+    function finishDrag(cancelled = false) {
+        if (!dragState) return;
+        suppressClickUntil = Date.now() + 220;
+        clearDragHover();
+        window.removeEventListener('pointermove', onDragPointerMove);
+        window.removeEventListener('pointerup', onDragPointerUp);
+        window.removeEventListener('pointercancel', onDragPointerUp);
+        if (dragState.ghost && dragState.ghost.parentNode) dragState.ghost.parentNode.removeChild(dragState.ghost);
+
+        const originCell = document.getElementById(`cell-${dragState.fromR}-${dragState.fromC}`);
+        const originCard = originCell ? originCell.querySelector('.char-card') : null;
+        if (originCard) originCard.classList.remove('dragging');
+
+        if (cancelled) {
+            dragState = null;
+            return;
+        }
+
+        dragState = null;
+    }
+
+    function startActiveCardDrag(pointerEvent) {
+        if (gameOver || inSetupPhase || combatState) return;
+        if (!activeUnitData || !activeUnitData.unit.isPlayer) return;
+
+        pointerEvent.preventDefault();
+        const { r, c, unit } = activeUnitData;
+        const validMoves = getValidMoves(unit, r, c).map(m => toKey(m.r, m.c));
+        const validTargets = getAttackTargets(r, c, unit, false).map(t => toKey(t.r, t.c));
+
+        const ghost = document.createElement('div');
+        ghost.id = 'drag-ghost';
+        ghost.innerHTML = `<b>${unit.element.icon} ${unit.name}</b><br><span style="font-size:11px;color:#ddd;">Přetažením pohyb/útok</span>`;
+        document.body.appendChild(ghost);
+
+        const originCard = document.getElementById(`cell-${r}-${c}`)?.querySelector('.char-card');
+        if (originCard) originCard.classList.add('dragging');
+
+        dragState = {
+            fromR: r,
+            fromC: c,
+            unitId: unit.id,
+            validMoveKeys: new Set(validMoves),
+            validTargetKeys: new Set(validTargets),
+            ghost,
+            hoverCellEl: null,
+            pointerId: pointerEvent.pointerId
+        };
+
+        onDragPointerMove(pointerEvent);
+        window.addEventListener('pointermove', onDragPointerMove);
+        window.addEventListener('pointerup', onDragPointerUp);
+        window.addEventListener('pointercancel', onDragPointerUp);
+    }
+
+    function onDragPointerMove(event) {
+        if (!dragState) return;
+        dragState.ghost.style.left = `${event.clientX}px`;
+        dragState.ghost.style.top = `${event.clientY - 14}px`;
+
+        const hit = cellFromPoint(event.clientX, event.clientY);
+        clearDragHover();
+        if (!hit) return;
+
+        const key = toKey(hit.r, hit.c);
+        if (dragState.validMoveKeys.has(key) || dragState.validTargetKeys.has(key)) {
+            hit.cell.classList.add('drop-hover');
+            dragState.hoverCellEl = hit.cell;
+        }
+    }
+
+    function executePlayerMove(toR, toC) {
+        const unit = activeUnitData.unit;
+        const fromR = activeUnitData.r;
+        const fromC = activeUnitData.c;
+
+        board[toR][toC] = unit;
+        board[fromR][fromC] = null;
+        activeUnitData.r = toR;
+        activeUnitData.c = toC;
+        turnAction.movesLeft -= 1;
+        turnAction.movedThisTurn = true;
+
+        log(`🏃 ${unit.name} se přesunul. Zbývající pohyb: ${turnAction.movesLeft}.`);
+        render();
+        animateCellEffect(toR, toC, 'anim-move', 920);
+    }
+
+    function onDragPointerUp(event) {
+        if (!dragState) return;
+
+        const hit = cellFromPoint(event.clientX, event.clientY);
+        const unit = activeUnitData ? activeUnitData.unit : null;
+
+        if (!hit || !unit || unit.id !== dragState.unitId) {
+            finishDrag(true);
+            return;
+        }
+
+        const key = toKey(hit.r, hit.c);
+        const target = board[hit.r][hit.c];
+
+        if (dragState.validTargetKeys.has(key) && target && !target.isPlayer) {
+            finishDrag(true);
+            prepareCombat(activeUnitData.r, activeUnitData.c, hit.r, hit.c, true);
+            return;
+        }
+
+        if (dragState.validMoveKeys.has(key) && !target) {
+            if (turnAction.movesLeft <= 0) {
+                log('Už nemáš žádný pohyb v tomto tahu.');
+                finishDrag(true);
+                return;
+            }
+            finishDrag(true);
+            executePlayerMove(hit.r, hit.c);
+            return;
+        }
+
+        finishDrag(true);
+    }
+
+    function bindActiveDragCard() {
+        if (gameOver || inSetupPhase || combatState) return;
+        if (!activeUnitData || !activeUnitData.unit.isPlayer) return;
+
+        const cell = document.getElementById(`cell-${activeUnitData.r}-${activeUnitData.c}`);
+        const cardEl = cell ? cell.querySelector('.char-card') : null;
+        if (!cardEl) return;
+
+        cardEl.classList.add('draggable');
+        cardEl.onpointerdown = startActiveCardDrag;
+    }
+
+    function movementFromSpeed(speed) {
+        if (speed <= 3) return 'orth';
+        if (speed <= 5) return 'diag';
+        if (speed <= 7) return 'omni';
+        if (speed <= 9) return 'dash';
+        return 'phantom';
+    }
+
+    function choosePassive(elementId) {
+        if (Math.random() < 0.2) return 'none';
+        const pool = PASSIVE_POOL_BY_ELEMENT[elementId] || ['none'];
+        return randomFrom(pool);
+    }
+
+    function createUnitCard(element, index) {
+        const rarity = pickRarity();
+        const atk = clamp(Math.round((element.atk * 0.46 + randInt(-1, 1)) * rarity.atkMult), 2, 8);
+        const hpMin = Math.ceil(atk * 1.4);
+        const hpMax = Math.max(hpMin, Math.floor(atk * 2.0));
+        const hpRatio = 1.55 + Math.random() * 0.35 + rarity.hpBias;
+        const elementalHpBias = (element.hp - element.atk) * 0.08;
+        const hp = clamp(Math.round(atk * hpRatio + elementalHpBias), hpMin, hpMax);
+        const spd = clamp(element.spd + randInt(-1, 1), 1, 10);
+        const movementId = movementFromSpeed(spd);
+        const passiveId = choosePassive(element.id);
+
+        return {
+            name: createCardName(element.id, rarity.id),
+            elementId: element.id,
+            rarityId: rarity.id,
+            cardNo: index,
+            atk,
+            hp,
+            maxHp: hp,
+            spd,
+            movementId,
+            passiveId
+        };
+    }
+
+    function materializeUnit(card, isPlayer) {
+        const element = ELEMENT_BY_ID[card.elementId];
+        const rarity = RARITY_BY_ID[card.rarityId] || RARITIES[0];
+        return {
+            id: uid(),
+            name: card.name,
+            rarity,
+            element,
+            atk: card.atk,
+            hp: card.hp,
+            maxHp: card.maxHp,
+            spd: card.spd,
+            movementId: card.movementId,
+            passiveId: card.passiveId,
+            isPlayer
+        };
+    }
+
+    function buildDeck() {
+        const deck = [];
+        const orderedElements = [...ELEMENTS];
+        for (let i = 0; i < 12; i++) {
+            const el = orderedElements[i % orderedElements.length];
+            deck.push(createUnitCard(el, i + 1));
+        }
+        return shuffle(deck);
+    }
+
+    function drawFromDeck(deck, count) {
+        return deck.splice(0, Math.min(count, deck.length));
+    }
+
+    function drawTacticCards(count) {
+        const hand = [];
+        for (let i = 0; i < count; i++) {
+            const group = randomFrom(TACTIC_GROUPS);
+            const form = randomFrom(TACTIC_FORMS);
+            const elementIcons = group.elements.map(elId => ELEMENT_BY_ID[elId].icon).join('');
+            hand.push({
+                id: group.id,
+                icon: group.icon,
+                className: group.className,
+                label: group.label,
+                formId: form.id,
+                formIcon: form.icon,
+                formLabel: form.label,
+                elements: group.elements,
+                elementIcons
+            });
+        }
+        return hand;
+    }
+
+    function deployCardsToSpawns(cards, isPlayer, spawns) {
+        cards.forEach((card, idx) => {
+            const pos = spawns[idx];
+            if (!pos) return;
+            board[pos.r][pos.c] = materializeUnit(card, isPlayer);
+        });
+    }
+
+    function deployEnemyOpening() {
+        const picked = [...enemyOpeningChoices].sort((a, b) => b.spd - a.spd).slice(0, 4);
+        deployCardsToSpawns(picked, false, ENEMY_SPAWNS);
+    }
+
+    function initGame() {
+        gameOver = false;
+        inSetupPhase = true;
+        setCinematicMode(cinematicMode);
+
+        board = createEmptyBoard();
+        turnQueue = [];
+        activeUnitData = null;
+        turnAction = null;
+        combatState = null;
+        isCombatModalMinimized = false;
+        dragState = null;
+
+        playerDeck = buildDeck();
+        enemyDeck = buildDeck();
+        playerOpeningChoices = drawFromDeck(playerDeck, 6);
+        enemyOpeningChoices = drawFromDeck(enemyDeck, 6);
+        selectedOpeningIndexes = new Set();
+        setupPlacementCards = [];
+        selectedPlacementCardIndex = null;
+        isPlacementPhase = false;
+
+        currentRound = 0;
+        baseHold = { playerOnEnemy: 0, enemyOnPlayer: 0 };
+        playerTacticHand = [];
+        enemyTacticHand = [];
+
+        document.getElementById('log').innerHTML = '';
+        document.getElementById('combat-modal').classList.remove('active');
+        document.getElementById('combat-modal').classList.remove('minimized');
+        closeCardInspect();
+        document.getElementById('restart-btn').style.display = 'none';
+
+        deployEnemyOpening();
+        openSetupModal();
+        render();
+
+        log('<b>Příprava balíčku:</b> Vyber 4 jednotky z 6 pro startovní nasazení.');
+    }
+
+    function openSetupModal() {
+        document.getElementById('setup-modal').classList.add('active');
+        renderSetupChoices();
+        updateSetupButton();
+    }
+
+    function renderSetupChoices() {
+        const wrap = document.getElementById('setup-cards');
+        wrap.innerHTML = '';
+
+        playerOpeningChoices.forEach((card, index) => {
+            const el = ELEMENT_BY_ID[card.elementId];
+            const rarity = RARITY_BY_ID[card.rarityId] || RARITIES[0];
+            const isSelected = selectedOpeningIndexes.has(index);
+            const move = MOVEMENT_DEFS[card.movementId];
+            const passive = PASSIVE_DEFS[card.passiveId];
+
+            const cardEl = document.createElement('div');
+            cardEl.className = `setup-card ${el.className} ${isSelected ? 'selected' : ''}`;
+            cardEl.innerHTML = `
+                <div style="display:flex;justify-content:space-between;align-items:center;gap:6px;">
+                    <div><b>${el.icon} ${card.name}</b></div>
+                    <div class="rarity-badge rarity-${rarity.id}">${rarity.symbol} ${rarity.label}</div>
+                </div>
+                <div class="setup-line"><span>ATK ${card.atk}</span><span>HP ${card.hp}</span><span>SPD ${card.spd}</span></div>
+                <div class="setup-line"><span>Pohyb: ${move.icon}</span><span>${move.label}</span></div>
+                <div class="setup-line"><span>${passive.short}</span><span>${el.group.toUpperCase()}</span></div>
+            `;
+            cardEl.onclick = () => toggleSetupCard(index);
+            wrap.appendChild(cardEl);
+        });
+    }
+
+    function toggleSetupCard(index) {
+        if (selectedOpeningIndexes.has(index)) {
+            selectedOpeningIndexes.delete(index);
+        } else {
+            if (selectedOpeningIndexes.size >= 4) return;
+            selectedOpeningIndexes.add(index);
+        }
+        renderSetupChoices();
+        updateSetupButton();
+    }
+
+    function updateSetupButton() {
+        const btn = document.getElementById('setup-confirm');
+        btn.innerText = `Nasadit ${selectedOpeningIndexes.size}/4`;
+        btn.style.opacity = selectedOpeningIndexes.size === 4 ? '1' : '0.8';
+    }
+
+    function confirmSetupSelection() {
+        if (selectedOpeningIndexes.size !== 4) {
+            alert('Vyber přesně 4 karty.');
+            return;
+        }
+        const picked = [...selectedOpeningIndexes].sort((a, b) => a - b).map(i => playerOpeningChoices[i]);
+        setupPlacementCards = [...picked];
+        selectedPlacementCardIndex = 0;
+        isPlacementPhase = true;
+        document.getElementById('setup-modal').classList.remove('active');
+        render();
+        log('<b>Rozmístění:</b> Vyber kartu dole a klikni na volné startovní pole hráče.');
+    }
+
+    function isPlayerSpawnCell(r, c) {
+        return PLAYER_SPAWNS.some(pos => pos.r === r && pos.c === c);
+    }
+
+    function tryFinishSetupPlacement() {
+        if (setupPlacementCards.length > 0) return;
+        isPlacementPhase = false;
+        inSetupPhase = false;
+        selectedPlacementCardIndex = null;
+        render();
+        log('<b>Nasazení hotovo.</b> Začínáme boj.');
+        startRound();
+    }
+
+    function handleSetupPlacementClick(r, c) {
+        if (!isPlacementPhase) return;
+        if (!isPlayerSpawnCell(r, c)) {
+            log('Během rozmisťování můžeš klikat jen na svoje startovní pole.');
+            return;
+        }
+        if (board[r][c]) {
+            log('Tohle pole už je obsazené. Vyber jiné.');
+            return;
+        }
+        if (selectedPlacementCardIndex === null || selectedPlacementCardIndex < 0 || selectedPlacementCardIndex >= setupPlacementCards.length) {
+            log('Nejprve vyber kartu dole.');
+            return;
+        }
+
+        const card = setupPlacementCards.splice(selectedPlacementCardIndex, 1)[0];
+        board[r][c] = materializeUnit(card, true);
+        selectedPlacementCardIndex = setupPlacementCards.length > 0 ? Math.min(selectedPlacementCardIndex, setupPlacementCards.length - 1) : null;
+        render();
+
+        if (setupPlacementCards.length > 0) {
+            log(`✅ ${card.name} nasazena. Zbývá umístit ${setupPlacementCards.length} karet.`);
+        }
+        tryFinishSetupPlacement();
+    }
+
+    function startRound() {
+        if (gameOver) return;
+
+        currentRound += 1;
+        const drawCount = Math.max(1, 6 - currentRound);
+        playerTacticHand = drawTacticCards(drawCount);
+        enemyTacticHand = drawTacticCards(drawCount);
+
+        log(`<hr><b>Kolo ${currentRound}</b>: líznuto ${drawCount} karet taktiky.`);
+        applyRoundPassives();
+        render();
+
+        if (checkWin()) return;
+        buildTurnQueue();
+    }
+
+    function applyRoundPassives() {
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const unit = board[r][c];
+                if (!unit) continue;
+
+                if (unit.passiveId === 'regen' && unit.hp < unit.maxHp) {
+                    unit.hp += 1;
+                    log(`✨ ${unit.name} regeneruje 1 HP.`);
+                }
+
+                if (unit.passiveId === 'bleedSelf') {
+                    unit.hp -= 1;
+                    showFloatingText(r, c, '-1', 'text-red');
+                    log(`☣️ ${unit.name} ztrácí 1 HP kvůli pasivce.`);
+                }
+
+                if (unit.hp <= 0) {
+                    log(`💀 ${unit.name} padl kvůli pasivnímu efektu.`);
+                    board[r][c] = null;
+                }
+            }
+        }
+    }
+
+    function buildTurnQueue() {
+        if (gameOver) return;
+
+        turnQueue = [];
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                if (board[r][c]) turnQueue.push({ r, c, unit: board[r][c] });
+            }
+        }
+
+        turnQueue.sort((a, b) => {
+            if (b.unit.spd !== a.unit.spd) return b.unit.spd - a.unit.spd;
+            return Math.random() - 0.5;
+        });
+
+        startNextTurn();
+    }
+
+    function getMovesPerTurn(unit) {
+        return unit.passiveId === 'extraMove' ? 2 : 1;
+    }
+
+    function endRound() {
+        if (gameOver) return;
+
+        playerTacticHand = [];
+        enemyTacticHand = [];
+        resolveBaseControl();
+        render();
+
+        if (checkWin()) return;
+        log('<b>Konec kola:</b> karty taktiky zahozené.');
+        setTimeout(startRound, pace(900));
+    }
+
+    function resolveBaseControl() {
+        const enemyBaseUnit = board[ENEMY_BASE_TARGET.r][ENEMY_BASE_TARGET.c];
+        const playerBaseUnit = board[PLAYER_BASE_TARGET.r][PLAYER_BASE_TARGET.c];
+
+        const playerOnEnemyBase = !!enemyBaseUnit && enemyBaseUnit.isPlayer;
+        const enemyOnPlayerBase = !!playerBaseUnit && !playerBaseUnit.isPlayer;
+
+        if (playerOnEnemyBase) {
+            baseHold.playerOnEnemy += 1;
+            log(`🏁 Držíš nepřátelskou základnu: ${baseHold.playerOnEnemy}/2.`);
+        } else if (baseHold.playerOnEnemy > 0) {
+            baseHold.playerOnEnemy = 0;
+            log('🏁 Ztratil jsi kontrolu nad nepřátelskou základnou.');
+        }
+
+        if (enemyOnPlayerBase) {
+            baseHold.enemyOnPlayer += 1;
+            log(`⚠️ Nepřítel drží tvoji základnu: ${baseHold.enemyOnPlayer}/2.`);
+        } else if (baseHold.enemyOnPlayer > 0) {
+            baseHold.enemyOnPlayer = 0;
+            log('🛡️ Tvoje základna je zase pod kontrolou.');
+        }
+    }
+
+    function startNextTurn() {
+        if (gameOver || inSetupPhase) return;
+
+        turnQueue = turnQueue.filter(item => board[item.r][item.c] && board[item.r][item.c].id === item.unit.id);
+        if (checkWin()) return;
+
+        if (turnQueue.length === 0) {
+            activeUnitData = null;
+            turnAction = null;
+            render();
+            endRound();
+            return;
+        }
+
+        activeUnitData = turnQueue.shift();
+        turnAction = { movesLeft: getMovesPerTurn(activeUnitData.unit), movedThisTurn: false };
+        render();
+
+        const unit = activeUnitData.unit;
+        if (unit.isPlayer) {
+            log(`🟢 Na tahu: <b>${unit.name}</b> | Přetáhni kartu na zelené pole (pohyb) nebo červený cíl (útok). Zbývající pohyb: ${turnAction.movesLeft}.`);
+        } else {
+            log(`🤖 Na tahu: nepřítel <b>${unit.name}</b>.`);
+            setTimeout(aiTakeAction, pace(1050));
+        }
+    }
+
+    function getValidMoves(unit, r, c) {
+        if (unit.passiveId === 'rooted') return [];
+
+        const moves = [];
+        const addMove = (mr, mc) => {
+            if (!isInside(mr, mc)) return;
+            if (board[mr][mc]) return;
+            moves.push({ r: mr, c: mc });
+        };
+
+        if (unit.movementId === 'orth') {
+            [ [1,0], [-1,0], [0,1], [0,-1] ].forEach(d => addMove(r + d[0], c + d[1]));
+        } else if (unit.movementId === 'diag') {
+            [ [1,1], [1,-1], [-1,1], [-1,-1] ].forEach(d => addMove(r + d[0], c + d[1]));
+        } else if (unit.movementId === 'omni') {
+            [ [1,0], [-1,0], [0,1], [0,-1], [1,1], [1,-1], [-1,1], [-1,-1] ].forEach(d => addMove(r + d[0], c + d[1]));
+        } else if (unit.movementId === 'dash') {
+            [ [1,0], [-1,0], [0,1], [0,-1] ].forEach(d => {
+                for (let step = 1; step <= 2; step++) {
+                    const nr = r + d[0] * step;
+                    const nc = c + d[1] * step;
+                    if (!isInside(nr, nc)) break;
+                    if (board[nr][nc]) break;
+                    moves.push({ r: nr, c: nc });
+                }
+            });
+        } else {
+            [
+                [1,0], [-1,0], [0,1], [0,-1], [1,1], [1,-1], [-1,1], [-1,-1],
+                [2,1], [2,-1], [-2,1], [-2,-1], [1,2], [1,-2], [-1,2], [-1,-2]
+            ].forEach(d => addMove(r + d[0], c + d[1]));
+        }
+
+        const unique = {};
+        moves.forEach(m => { unique[toKey(m.r, m.c)] = m; });
+        return Object.values(unique);
+    }
+
+    function getAttackTargets(r, c, unit, targetPlayer) {
+        const range = unit.passiveId === 'longReach' ? 2 : 1;
+        const targets = [];
+
+        for (let rr = 0; rr < ROWS; rr++) {
+            for (let cc = 0; cc < COLS; cc++) {
+                const target = board[rr][cc];
+                if (!target || target.isPlayer !== targetPlayer) continue;
+                const dist = Math.abs(rr - r) + Math.abs(cc - c);
+                if (dist > 0 && dist <= range) {
+                    targets.push({ r: rr, c: cc, unit: target });
+                }
+            }
+        }
+
+        return targets;
+    }
+
+    function handleCellClick(r, c) {
+        if (gameOver || combatState) return;
+        if (inSetupPhase) {
+            handleSetupPlacementClick(r, c);
+            return;
+        }
+        if (Date.now() < suppressClickUntil) return;
+        if (!activeUnitData || !activeUnitData.unit.isPlayer) return;
+
+        const unit = activeUnitData.unit;
+        const sr = activeUnitData.r;
+        const sc = activeUnitData.c;
+        const clicked = board[r][c];
+
+        if (r === sr && c === sc) {
+            log(`⏳ ${unit.name} ukončil tah.`);
+            setTimeout(startNextTurn, pace(420));
+            return;
+        }
+
+        if (clicked) {
+            if (clicked.isPlayer) {
+                openCardInspect(r, c);
+                return;
+            }
+            const targets = getAttackTargets(sr, sc, unit, false);
+            if (targets.some(t => t.r === r && t.c === c)) {
+                prepareCombat(sr, sc, r, c, true);
+            } else {
+                log('Cíl je mimo dosah útoku.');
+            }
+            return;
+        }
+
+        log('Pro pohyb použij přetažení aktivní karty na zeleně zvýrazněné pole.');
+    }
+
+    function nearestEnemyDistance(r, c, lookingForPlayer) {
+        let best = 99;
+        for (let rr = 0; rr < ROWS; rr++) {
+            for (let cc = 0; cc < COLS; cc++) {
+                const u = board[rr][cc];
+                if (!u || u.isPlayer !== lookingForPlayer) continue;
+                best = Math.min(best, Math.abs(rr - r) + Math.abs(cc - c));
+            }
+        }
+        return best;
+    }
+
+    function aiChooseMove(options) {
+        let best = null;
+        let bestScore = Infinity;
+
+        options.forEach(opt => {
+            const baseDist = Math.abs(opt.r - PLAYER_BASE_TARGET.r) + Math.abs(opt.c - PLAYER_BASE_TARGET.c);
+            const enemyDist = nearestEnemyDistance(opt.r, opt.c, true);
+            const score = baseDist * 2 + enemyDist;
+            if (score < bestScore) {
+                bestScore = score;
+                best = opt;
+            }
+        });
+
+        return best || options[0];
+    }
+
+    function aiTryAttack() {
+        const unit = activeUnitData.unit;
+        const targets = getAttackTargets(activeUnitData.r, activeUnitData.c, unit, true);
+        if (targets.length === 0) return false;
+
+        targets.sort((a, b) => a.unit.hp - b.unit.hp);
+        const target = targets[0];
+        prepareCombat(activeUnitData.r, activeUnitData.c, target.r, target.c, false);
+        return true;
+    }
+
+    function aiTakeAction() {
+        if (gameOver || !activeUnitData || activeUnitData.unit.isPlayer) return;
+
+        if (aiTryAttack()) return;
+
+        while (turnAction.movesLeft > 0) {
+            const unit = activeUnitData.unit;
+            const options = getValidMoves(unit, activeUnitData.r, activeUnitData.c);
+            if (options.length === 0) break;
+
+            const move = aiChooseMove(options);
+            board[move.r][move.c] = unit;
+            board[activeUnitData.r][activeUnitData.c] = null;
+            activeUnitData.r = move.r;
+            activeUnitData.c = move.c;
+
+            turnAction.movesLeft -= 1;
+            turnAction.movedThisTurn = true;
+            render();
+            animateCellEffect(move.r, move.c, 'anim-move', 520);
+
+            if (aiTryAttack()) return;
+        }
+
+        log(`⏳ Nepřítel ${activeUnitData.unit.name} ukončil tah.`);
+        setTimeout(startNextTurn, pace(650));
+    }
+
+    function resolveTacticEffect(card, unit) {
+        if (!card || !unit) {
+            return {
+                affinity: 'none',
+                attackBonus: 0,
+                defenseShield: 0,
+                formId: null
+            };
+        }
+
+        let powerValue = TACTIC_NEUTRAL_VALUE;
+        let affinity = 'neutral';
+        if (card.id === unit.element.group) {
+            powerValue = TACTIC_MATCH_VALUE;
+            affinity = 'strong';
+        } else if (TACTIC_BLOCKED_BY_GROUP[card.id] === unit.element.group) {
+            powerValue = 0;
+            affinity = 'none';
+        }
+
+        if (card.formId === 'defense') {
+            return {
+                affinity,
+                attackBonus: 0,
+                defenseShield: powerValue,
+                formId: card.formId
+            };
+        }
+
+        return {
+            affinity,
+            attackBonus: powerValue,
+            defenseShield: 0,
+            formId: card.formId || 'attack'
+        };
+    }
+
+    function elementalBonus(attackerEl, defenderEl) {
+        return ADVANTAGE_MAP[attackerEl] === defenderEl ? 1 : 0;
+    }
+
+    function computeDamage(attacker, defender, tacticBonus, movedThisTurn = false) {
+        let dmg = attacker.atk + tacticBonus + elementalBonus(attacker.element.id, defender.element.id);
+        if (attacker.element.id === 'electric' && movedThisTurn) dmg += 1;
+        if (defender.passiveId === 'rooted') dmg -= 1;
+        return Math.max(1, dmg);
+    }
+
+    function prepareCombat(attR, attC, defR, defC, isPlayerAttacking) {
+        if (gameOver) return;
+
+        const attacker = board[attR][attC];
+        const defender = board[defR][defC];
+        if (!attacker || !defender) {
+            combatState = null;
+            render();
+            setTimeout(startNextTurn, pace(220));
+            return;
+        }
+
+        combatState = { attR, attC, defR, defC, attacker, defender, isPlayerAttacking };
+
+        const modal = document.getElementById('combat-modal');
+        const combatHand = document.getElementById('combat-hand');
+        combatHand.innerHTML = '';
+
+        const myUnit = isPlayerAttacking ? attacker : defender;
+
+        playerTacticHand.forEach((card, index) => {
+            const effect = resolveTacticEffect(card, myUnit);
+            const affinityTag = effect.affinity === 'strong'
+                ? 'silná'
+                : (effect.affinity === 'neutral' ? 'neutrální' : 'nevýhoda');
+            const bonusText = card.formId === 'defense'
+                ? `Štít ${effect.defenseShield} (${affinityTag})`
+                : `+${effect.attackBonus} ATK (${affinityTag})`;
+            const cardEl = document.createElement('div');
+            cardEl.className = `ammo-card ${card.className}`;
+            cardEl.style.transform = 'scale(0.8)';
+            cardEl.innerHTML = `${card.icon}<div class="ammo-desc">${card.formIcon} ${card.formLabel}<br>${bonusText}</div><div class="ammo-elements">${card.elementIcons}</div>`;
+            cardEl.onmouseenter = () => renderCombatPanel(index);
+            cardEl.onmouseleave = () => renderCombatPanel(null);
+            cardEl.ontouchstart = () => renderCombatPanel(index);
+            cardEl.onclick = () => resolveCombat(index);
+            combatHand.appendChild(cardEl);
+        });
+
+        if (playerTacticHand.length === 0) {
+            combatHand.innerHTML = '<div style="font-size: 12px; color: #bbb;">Nemáš žádnou kartu taktiky, můžeš bojovat bez karty.</div>';
+        }
+
+        setCombatModalMinimized(false);
+        renderCombatPanel(null);
+        modal.classList.add('active');
+    }
+
+    function resolveCombat(playerCardIndex) {
+        if (gameOver || !combatState) return;
+
+        document.getElementById('combat-modal').classList.remove('active');
+        document.getElementById('combat-modal').classList.remove('minimized');
+        isCombatModalMinimized = false;
+        const { attacker, defender, attR, attC, defR, defC, isPlayerAttacking } = combatState;
+
+        let playerEffect = { affinity: 'none', attackBonus: 0, defenseShield: 0, formId: null };
+        let aiEffect = { affinity: 'none', attackBonus: 0, defenseShield: 0, formId: null };
+
+        if (playerCardIndex !== null && playerCardIndex >= 0 && playerCardIndex < playerTacticHand.length) {
+            const played = playerTacticHand.splice(playerCardIndex, 1)[0];
+            const myUnit = isPlayerAttacking ? attacker : defender;
+            playerEffect = resolveTacticEffect(played, myUnit);
+        }
+
+        if (enemyTacticHand.length > 0 && Math.random() < 0.65) {
+            const aiIndex = Math.floor(Math.random() * enemyTacticHand.length);
+            const aiCard = enemyTacticHand.splice(aiIndex, 1)[0];
+            const aiUnit = isPlayerAttacking ? defender : attacker;
+            aiEffect = resolveTacticEffect(aiCard, aiUnit);
+        }
+
+        const attackerEffect = isPlayerAttacking ? playerEffect : aiEffect;
+        const defenderEffect = isPlayerAttacking ? aiEffect : playerEffect;
+        const attackerMoved = !!(turnAction && turnAction.movedThisTurn && activeUnitData && activeUnitData.unit && activeUnitData.unit.id === attacker.id);
+        const attRawDmg = computeDamage(attacker, defender, attackerEffect.attackBonus, attackerMoved);
+        const attFinalDmg = Math.max(0, attRawDmg - defenderEffect.defenseShield);
+        const defRawDmg = computeDamage(defender, attacker, defenderEffect.attackBonus, false);
+        const defFinalDmg = Math.max(0, defRawDmg - ATTACKER_GUARD_BONUS - attackerEffect.defenseShield);
+
+        const attCardEl = document.getElementById(`cell-${attR}-${attC}`).querySelector('.char-card');
+        if (attCardEl) attCardEl.classList.add(attR > defR ? 'anim-bump-up' : 'anim-bump-down');
+        markDuelCards(attR, attC, defR, defC);
+        createAttackTrail(attR, attC, defR, defC, '#ffd86c', 70);
+        createAttackTrail(defR, defC, attR, attC, '#7bc8ff', 380);
+
+        setTimeout(() => {
+            if (gameOver) return;
+
+            const attHpAfter = Math.max(0, attacker.hp - defFinalDmg);
+            const defHpAfter = Math.max(0, defender.hp - attFinalDmg);
+            const attShieldText = attackerEffect.defenseShield > 0 ? `, štít útočníka ${attackerEffect.defenseShield}` : '';
+            const defShieldText = defenderEffect.defenseShield > 0 ? `, štít obránce ${defenderEffect.defenseShield}` : '';
+            log(`⚔️ ${attacker.name} udělil ${attFinalDmg} poškození (${defender.name}: ${defHpAfter} HP${defShieldText}) a ${defender.name} vrátil ${defFinalDmg} (${attacker.name}: ${attHpAfter} HP${attShieldText}).`);
+
+            const defHpBefore = defender.hp;
+            const attHpBefore = attacker.hp;
+            attacker.hp -= defFinalDmg;
+            defender.hp -= attFinalDmg;
+            const attackerDead = attacker.hp <= 0;
+            const defenderDead = defender.hp <= 0;
+
+            updateHpDisplayInCell(defR, defC, defender.hp, defender.maxHp);
+            updateHpDisplayInCell(attR, attC, attacker.hp, attacker.maxHp);
+
+            showFloatingText(defR, defC, `-${attFinalDmg}`, 'text-red');
+            showFloatingText(attR, attC, `-${defFinalDmg}`, 'text-red');
+            showFloatingText(defR, defC, `${defHpBefore}→${Math.max(0, defender.hp)} HP`, 'text-cyan');
+            showFloatingText(attR, attC, `${attHpBefore}→${Math.max(0, attacker.hp)} HP`, 'text-cyan');
+            animateCellEffect(defR, defC, 'anim-hit', 820);
+            animateCellEffect(attR, attC, 'anim-hit', 820);
+
+            if (defenderDead) {
+                log(`💀 ${defender.name} padl.`);
+                document.getElementById(`cell-${defR}-${defC}`)?.querySelector('.char-card')?.classList.add('anim-death');
+            }
+            if (attackerDead) {
+                log(`💀 ${attacker.name} padl.`);
+                document.getElementById(`cell-${attR}-${attC}`)?.querySelector('.char-card')?.classList.add('anim-death');
+            }
+
+            setTimeout(() => {
+                if (defenderDead) board[defR][defC] = null;
+                if (attackerDead) board[attR][attC] = null;
+
+                combatState = null;
+                render();
+
+                if (checkWin()) return;
+                setTimeout(startNextTurn, pace(1100));
+            }, pace(920));
+        }, pace(820));
+    }
+
+    function showFloatingText(r, c, text, colorClass) {
+        const cell = document.getElementById(`cell-${r}-${c}`);
+        if (!cell) return;
+        const floatEl = document.createElement('div');
+        floatEl.className = `floating-text ${colorClass}`;
+        floatEl.innerText = text;
+        cell.appendChild(floatEl);
+        setTimeout(() => {
+            if (floatEl.parentNode) floatEl.parentNode.removeChild(floatEl);
+        }, pace(1900));
+    }
+
+    function endGame(message, isWin) {
+        if (gameOver) return;
+        gameOver = true;
+        turnQueue = [];
+        activeUnitData = null;
+        turnAction = null;
+        combatState = null;
+        isCombatModalMinimized = false;
+        dragState = null;
+
+        document.getElementById('combat-modal').classList.remove('active');
+        document.getElementById('combat-modal').classList.remove('minimized');
+        document.getElementById('setup-modal').classList.remove('active');
+        closeCardInspect();
+        document.getElementById('restart-btn').style.display = 'inline-block';
+
+        render();
+        log(`<hr><b>${isWin ? 'VÝHRA' : 'PROHRA'}:</b> ${message}`);
+        alert(message);
+    }
+
+    function checkWin() {
+        if (gameOver) return true;
+
+        let playerCount = 0;
+        let enemyCount = 0;
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const unit = board[r][c];
+                if (!unit) continue;
+                if (unit.isPlayer) playerCount += 1;
+                else enemyCount += 1;
+            }
+        }
+
+        if (baseHold.playerOnEnemy >= 2) {
+            endGame('VYHRÁL JSI! Udržel jsi nepřátelskou základnu jedno celé kolo.', true);
+            return true;
+        }
+        if (baseHold.enemyOnPlayer >= 2) {
+            endGame('PROHRÁL JSI! Nepřítel udržel tvoji základnu jedno celé kolo.', false);
+            return true;
+        }
+
+        if (playerCount === 0) {
+            endGame('PROHRÁL JSI! Všechny tvoje jednotky padly.', false);
+            return true;
+        }
+        if (enemyCount === 0) {
+            endGame('VYHRÁL JSI! Vyčistil jsi bojiště.', true);
+            return true;
+        }
+
+        return false;
+    }
+
+    function render() {
+        const boardEl = document.getElementById('board');
+        const initEl = document.getElementById('initiative-bar');
+        const handEl = document.getElementById('hand');
+        const infoEl = document.getElementById('round-info');
+        const endTurnBtn = document.getElementById('end-turn-btn');
+
+        const moveKeys = new Set();
+        const targetKeys = new Set();
+        const setupKeys = new Set();
+        if (inSetupPhase && isPlacementPhase) {
+            PLAYER_SPAWNS.forEach(pos => {
+                if (!board[pos.r][pos.c]) setupKeys.add(toKey(pos.r, pos.c));
+            });
+        }
+        if (!gameOver && !inSetupPhase && !combatState && activeUnitData && activeUnitData.unit.isPlayer) {
+            if (turnAction && turnAction.movesLeft > 0) {
+                getValidMoves(activeUnitData.unit, activeUnitData.r, activeUnitData.c).forEach(m => moveKeys.add(toKey(m.r, m.c)));
+            }
+            getAttackTargets(activeUnitData.r, activeUnitData.c, activeUnitData.unit, false).forEach(t => targetKeys.add(toKey(t.r, t.c)));
+        }
+
+        boardEl.innerHTML = '';
+        for (let r = 0; r < ROWS; r++) {
+            for (let c = 0; c < COLS; c++) {
+                const unit = board[r][c];
+                const isEnemyBase = (r === ENEMY_BASE_TARGET.r && c === ENEMY_BASE_TARGET.c);
+                const isPlayerBase = (r === PLAYER_BASE_TARGET.r && c === PLAYER_BASE_TARGET.c);
+                const isActiveCell = activeUnitData && activeUnitData.r === r && activeUnitData.c === c;
+                const key = toKey(r, c);
+
+                const cell = document.createElement('div');
+                cell.id = `cell-${r}-${c}`;
+                cell.className = `cell ${r < 2 ? 'enemy-zone' : 'player-zone'} ${isEnemyBase ? 'base-enemy' : ''} ${isPlayerBase ? 'base-player' : ''} ${isActiveCell ? 'active-unit-cell' : ''} ${setupKeys.has(key) ? 'move-option' : ''} ${moveKeys.has(key) ? 'move-option' : ''} ${targetKeys.has(key) ? 'target-option' : ''}`;
+                cell.onclick = () => handleCellClick(r, c);
+
+                if (unit) {
+                    const move = MOVEMENT_DEFS[unit.movementId];
+                    const passive = PASSIVE_DEFS[unit.passiveId];
+                    const isActive = activeUnitData && activeUnitData.unit.id === unit.id;
+                    const rarityClass = `rarity-${unit.rarity.id}`;
+                    const baseMoves = getMovesPerTurn(unit);
+                    const movesLeft = (isActive && turnAction) ? turnAction.movesLeft : baseMoves;
+                    const moveBadgeClass = movesLeft <= 0 ? 'empty' : (movesLeft < baseMoves ? 'low' : '');
+
+                    cell.innerHTML = `
+                        <div class="char-card ${unit.element.className} ${unit.isPlayer ? 'player' : 'enemy'} ${isActive ? 'active-turn' : ''}" data-r="${r}" data-c="${c}">
+                            <div class="card-head">
+                                <div class="card-name">${unit.name}</div>
+                            </div>
+                            <div class="card-meta">
+                                <div class="card-meta-left">
+                                    <button class="inspect-btn" onpointerdown="event.stopPropagation()" onclick="event.stopPropagation(); openCardInspect(${r}, ${c});">i</button>
+                                    <div class="rarity-badge ${rarityClass}" title="${unit.rarity.label}">${unit.rarity.symbol}</div>
+                                </div>
+                                <div class="move-badge ${moveBadgeClass}">M ${movesLeft}/${baseMoves}</div>
+                            </div>
+                            <div class="card-art">${unit.element.icon}</div>
+                            <div class="stats">
+                                <span>⚔️${unit.atk}</span>
+                                <span style="color:${unit.hp <= 2 ? '#ff5252':'white'}">❤️${unit.hp}</span>
+                                <span class="spd-badge">⚡${unit.spd}</span>
+                            </div>
+                            <div class="sub-stats">${move.icon} | ${passive.label}</div>
+                        </div>
+                    `;
+                } else {
+                    const zoneLabel = r < 2 ? 'Nepřítel' : 'Hráč';
+                    cell.innerHTML = `<span>${zoneLabel}</span><span style="opacity: 0.35;">(Prázdno)</span>`;
+                }
+
+                if (isEnemyBase) {
+                    const base = document.createElement('div');
+                    base.className = 'base-label';
+                    base.innerText = `NEPŘÁTELSKÁ ZÁKLADNA ${baseHold.playerOnEnemy}/2`;
+                    cell.appendChild(base);
+                }
+                if (isPlayerBase) {
+                    const base = document.createElement('div');
+                    base.className = 'base-label';
+                    base.innerText = `TVOJE ZÁKLADNA ${baseHold.enemyOnPlayer}/2`;
+                    cell.appendChild(base);
+                }
+
+                boardEl.appendChild(cell);
+            }
+        }
+
+        initEl.innerHTML = '';
+        if (activeUnitData) {
+            initEl.innerHTML += `<div class="init-item active ${activeUnitData.unit.isPlayer ? 'player' : 'enemy'}">▶ ${activeUnitData.unit.name}</div>`;
+        }
+        turnQueue.forEach(item => {
+            initEl.innerHTML += `<div class="init-item ${item.unit.isPlayer ? 'player' : 'enemy'}">${item.unit.name} (${item.unit.spd})</div>`;
+        });
+
+        handEl.innerHTML = '';
+        if (inSetupPhase && isPlacementPhase) {
+            setupPlacementCards.forEach((card, index) => {
+                const el = ELEMENT_BY_ID[card.elementId];
+                const selectedClass = index === selectedPlacementCardIndex ? 'selected' : '';
+                handEl.innerHTML += `
+                    <div class="ammo-card ${el.className} ${selectedClass}" onclick="selectPlacementCard(${index})">
+                        ${el.icon}
+                        <div class="ammo-desc">${card.name}</div>
+                        <div class="ammo-elements">ATK ${card.atk} | HP ${card.hp}</div>
+                    </div>
+                `;
+            });
+        } else {
+            playerTacticHand.forEach(card => {
+                handEl.innerHTML += `
+                    <div class="ammo-card ${card.className}">
+                        ${card.icon}
+                        <div class="ammo-desc">${card.formIcon} ${card.formLabel}<br>${card.label}</div>
+                        <div class="ammo-elements">${card.elementIcons}</div>
+                    </div>
+                `;
+            });
+        }
+
+        if (endTurnBtn) {
+            const canEndTurn = !gameOver && !inSetupPhase && !combatState && activeUnitData && activeUnitData.unit.isPlayer;
+            endTurnBtn.disabled = !canEndTurn;
+            endTurnBtn.style.opacity = canEndTurn ? '1' : '0.45';
+            endTurnBtn.style.cursor = canEndTurn ? 'pointer' : 'not-allowed';
+        }
+
+        bindActiveDragCard();
+
+        if (gameOver) {
+            infoEl.innerText = 'Konec hry. Klikni na Hrát znovu.';
+        } else if (inSetupPhase && isPlacementPhase) {
+            const left = setupPlacementCards.length;
+            infoEl.innerText = `Rozmístění karet: vyber kartu dole a klikni na startovní pole hráče. Zbývá umístit: ${left}.`;
+        } else if (inSetupPhase) {
+            infoEl.innerText = 'Sestavení: vyber 4 jednotky z 6 karet.';
+        } else {
+            const drawNow = Math.max(1, 6 - currentRound);
+            infoEl.innerText = `Kolo ${currentRound} | Plán lízání: 5→4→3→2→1 | Aktuálně lízneš: ${drawNow} | Taktiky v ruce: ${playerTacticHand.length} | Detail karty: tlačítko i`;
+        }
+    }
+
+    function restartGame() {
+        initGame();
+    }
+
+    document.getElementById('card-inspect-modal').addEventListener('click', (event) => {
+        if (event.target.id === 'card-inspect-modal') closeCardInspect();
+    });
+
+    initGame();
+</script>
+</body>
+</html>
